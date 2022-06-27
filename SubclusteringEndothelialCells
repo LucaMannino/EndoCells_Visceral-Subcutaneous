@@ -245,5 +245,129 @@ DoHeatmap(combined.sct, features = top20$gene) + NoLegend()
 
 
 
+find subclusters for cluster 0
+```{r}
+DefaultAssay(Strict2) <- "integrated"
+Strict3 <- FindSubCluster(Strict2, 0, subcluster.name = "sub.cluster", graph.name = "integrated_nn",
+  resolution = 0.2,
+  algorithm = 1)
+```
+
+we check a list of marker genes via dot plot to give us an idea of what each cluster might be
+genes <- c("EFNB2","ARL15","NKAIN2",'GJA5','IGFBP3','FBLN5','CD36','CADM2','FABP4','NRP1','BTNL9','PPARG','COL4A1','PDE3B','AQP7','PLIN1','IGF1','LPL','ANGPT1','ACSL1','ZNF385D','ADAMTS9','HDAC9','COL15A1','VCAN','LRRC1','PLCXD3','POSTN','RYR3','SELE','RELN','MMRN1','STOX2','NRG1','CD163','MRC1','CDH1','FLRT2','ACSL4','COL8A1','CACNB2')
 
 
+```{r}
+genes <- c("EFNB2","ARL15","NKAIN2",'GJA5','IGFBP3','FBLN5','CD36','CADM2','FABP4','NRP1','BTNL9','PPARG','COL4A1','PDE3B','AQP7','PLIN1','IGF1','LPL','ANGPT1','ACSL1','ZNF385D','ADAMTS9','HDAC9','COL15A1','VCAN','LRRC1','PLCXD3','POSTN','RYR3','SELE','RELN','MMRN1','STOX2','NRG1','CD163','MRC1','CDH1','FLRT2','ACSL4','COL8A1','CACNB2')
+DefaultAssay(Strict2) <- "SCT"
+FeaturePlot(Strict2, genes)
+DotPlot(Strict3,features = genes, assay = "SCT",cols = c("blue", "red"))+RotatedAxis()
+
+```
+
+
+
+
+
+```{r}
+DefaultAssay(Strict3) <- "SCT"
+FeaturePlot(Strict3,  c("CD163","MRC1","PTPRC"), pt.size = 0.1,reduction ="umap",min.cutoff=0)
+FeaturePlot(Strict3,  c("CDH5","PECAM1","LYVE1","PROX1"), pt.size = 0.1,reduction ="umap",min.cutoff=0)
+FeaturePlot(Strict3,  c("CDH5"), pt.size = 0.1,reduction ="umap",min.cutoff=0)
+
+DimPlot(Strict3, label=TRUE, group.by="sub.cluster")
+DotPlot(Strict3,features = c("CD163","MRC1","PTPRC","CDH5","PECAM1","LYVE1","PROX1"), assay = "SCT",cols = c("blue", "red"))
+```
+
+
+rename clusters appropiately:
+stem.combined <- RenameIdents(object = stem.combined, `0` = "your cell type", `1` = "your other cell type", `2` = "your last cell type")
+
+```{r}
+Idents(Strict3) <- "sub.cluster"
+Strict3 <- RenameIdents(object = Strict3, "0_0" = "Lymphatic", "0_1" = "Vein_1", `1` = "Artery", "2"="Capillary", "3"="Vein_2","4"="Unknown","5"="Vein_3", "6"="Capillary/Arteriole","7"="Endo_MT")
+
+```
+
+
+```{r}
+DimPlot(Strict3, label=TRUE)
+DimPlot(Strict3, label=FALSE, group.by = "type")
+DimPlot(Strict3, label=FALSE, group.by = "condition")
+DimPlot(Strict3, label=FALSE, group.by = "orig.ident")
+DimPlot(Strict3, label=FALSE, split.by = "type")
+```
+
+The code below is used to find the marker genes needed above to label the subclusters
+
+```{r}
+DefaultAssay(Strict3) <- "SCT"
+combined.Strict3 <- PrepSCTFindMarkers(Strict3)
+
+combined.markers.Strict3 <- FindAllMarkers(combined.Strict3, assay = "SCT",    verbose = FALSE, only.pos = TRUE,  logfc.threshold = 0.05,)
+head(combined.markers, n = 15)
+
+#We produce a table with top 50 marker genes per cluster to facilitate use
+combined.markers.Strict3 %>%
+    group_by(cluster) %>%
+    slice_max(n = 50, order_by = avg_log2FC)
+
+```
+
+
+```{r}
+#Following code is to produce a heatmap of the 20 top marker genes per cluster
+
+combined.markers.Strict3 %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(Strict3, features = top10$gene)  + theme(text = element_text(size = 7.5))
+```
+
+violin plots to indicate clusters identity
+```{r}
+DefaultAssay(Strict3) <- "SCT"
+VlnPlot(object = Strict3, features = c('MMRN1',"TLL1","ARL15","CADM2","NCKAP5","RGS6"))
+```
+
+
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+
+plot violin plot together
+
+```{r}
+DefaultAssay(Strict3) <- "SCT"
+features <- c('MMRN1',"TLL1","IGFBP3","CADM2","NCKAP5","RGS6","PDE3B")
+
+a <- VlnPlot(Strict3, features, stack = TRUE, sort = TRUE) +
+        theme(legend.position = "none") + ggtitle("Identity on y-axis")
+
+b <- VlnPlot(Strict3, features, stack = TRUE, sort = TRUE, flip = TRUE) +
+        theme(legend.position = "none") + ggtitle("Identity on x-axis")
+
+```
+
+
+```{r}
+b
+DotPlot(Strict3,features = genes, assay = "SCT",cols = c("blue", "red"))+RotatedAxis()
+```
+
+save object
+```{r}
+saveRDS(Strict3, "endothelial.rds")
+```
+
+produce histogram and data table
+```{r}
+## extract meta data
+mp <- Strict3@meta.data %>% as.data.table
+# the resulting md object has one "row" per cell
+## count the number of cells per unique combinations of "Sample" and "seurat_clusters"
+mp[, .N, by = c("orig.ident", "seurat_clusters")]
+## with additional casting after the counting
+mp[, .N, by = c("orig.ident", "sub.cluster")] %>% dcast(., orig.ident ~ sub.cluster, value.var = "N")
+ggplot(Strict3@meta.data, aes(Strict3@meta.data$sub.cluster, fill = Strict3@meta.data$orig.ident))+geom_bar(stat="count")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
